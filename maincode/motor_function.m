@@ -47,12 +47,12 @@ if rear_bias == 1.0  % this part doesn't really make sense, predicts a accel tim
 else 
     
     if derate
-    rear_max_current_accel = round(60 * (11.33/(gearratio)));  %using 25 - 75 power split between front and rear, following derating. 
-    front_max_current_accel = round(20 * (11.33/(frontgearratio)));  %these numbers need to be subject to change based on the gear ratio. otherwise we will exceed the power limit 
+    rear_max_current_accel = 60 * (11.33/(gearratio));  %using 25 - 75 power split between front and rear, following derating. 
+    front_max_current_accel = 20 * (11.33/(frontgearratio));  %these numbers need to be subject to change based on the gear ratio. otherwise we will exceed the power limit 
     %fprintf("%0.1f\n", rear_max_current_accel); 
     else
-    rear_max_current_accel = min(105, round(105 * (11.33/(gearratio)))); % [A] This is the maximum current that can be applied for 1.24s before the motor overheats
-    front_max_current_accel = round(55 * (11.33/(frontgearratio))); % This is approximately the maximum current given the grip limitations of the front wheels 
+    rear_max_current_accel = min(105, 105 * (11.33/(gearratio))); % [A] This is the maximum current that can be applied for 1.24s before the motor overheats
+    front_max_current_accel = 55 * (11.33/(frontgearratio)); % This is approximately the maximum current given the grip limitations of the front wheels 
     end
 
 end
@@ -337,4 +337,4 @@ if rear_fw
 
 end 
 
-
+    
