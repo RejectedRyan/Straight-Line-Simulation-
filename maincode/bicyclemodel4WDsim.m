@@ -10,8 +10,8 @@ clc
 dp = 0.01;  %meters 
 
 %gr sweep for selecting gear ratio 
-gr_low = 10;
-gr_high = 18;
+gr_low = 11.33;
+gr_high = 11.33;
 gr_step = 0.5;
 gr_sweep = gr_low:gr_step:gr_high;
 Acceltime = zeros(size(gr_sweep,1));  
@@ -26,6 +26,9 @@ maxpowerdelta = zeros(size(gr_sweep,1));
 
 %taken from max power delta lol 
 
+%top speed 
+
+topspeed = zeros(size(gr_sweep,1)); 
 
 %sweep for selecting power split
 rear_bias_low = 0.20;
@@ -175,11 +178,11 @@ tire_radius = 0.2; % effective tire radius [m]
 % DRIVETRAIN DATA
 num_motors = 2; % Number of motors being used
 gearbox_e = 0.85; % Approx. Gearbox efficiency -> Multiply the  torque by this value
-gearratio = 15;
-frontgearratio = 15; 
+gearratio = 11.33;
+frontgearratio = 11.33; 
 %max_power = 80;  %kW
 %torque = 21; %n*m
-rear_bias = 0; % how much of the power is sent to the rear wheels. for now 0 means AWD, 1.0 means RWD
+rear_bias = 1.0; % how much of the power is sent to the rear wheels. for now 0 means AWD, 1.0 means RWD
 max_rpm = 19200; %max rpm 
 
 
@@ -195,11 +198,18 @@ cell_max_voltage = 4.1; % maximum voltage we charge each cell
 battery_OCV = cell_max_voltage * s_count; % Battery open current voltage
 
 
+%%%%%%%%%%%%%%%%%%%%%%%%
+
 %% Gear ratio sweep 
 i = 1; 
 for gearratio = gr_low:gr_step:gr_high
 
 frontgearratio = gearratio; 
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%
+
 
 % %% Power split sweep 
 % i = 1;  
@@ -270,9 +280,9 @@ for pos = 1:1:size(P,2)-1
     rear_friction_torque(pos) = Fgriprear(pos) * tire_radius / gearratio / num_motors / gearbox_e; 
 
     %available torque for front motors from grip on ground (one tire)
-    front_friction_torque(pos) = Fgripfront(pos) * tire_radius / gearratio / num_motors / gearbox_e; 
+    front_friction_torque(pos) = Fgripfront(pos) * tire_radius / frontgearratio / num_motors / gearbox_e; 
 
-    if T(pos) > 1.24
+    if T(pos) > 1.71
         derate = 1; 
     end
 
@@ -313,7 +323,7 @@ for pos = 1:1:size(P,2)-1
     end 
 
     % power limiter. hitting 80 kW power limit = no more acceleration 
-    if battery_current(pos) * battery_OCV >= 80000
+    if battery_current(pos) * battery_OCV >= 160000
 
         A(pos+1) = 0; 
 
@@ -363,18 +373,21 @@ battery_energy_consumption_kWh = battery_energy_consumption / 3.6e6; % kWh
 total_battery_energy_consumption_kWh = sum(battery_energy_consumption_kWh);
 battery_power_consumption = battery_power_consumption / 1000;
 
-%% note: this section does not currently work. 
 
 % %Display 75 m acceleration time 
 fprintf("75 m acceleration event time: %0.2f for overall gear ratio: %0.1f\n", T(pos+1), frontgearratio); 
 % Display max battery power consumption (for purpose of finding optimal
 % motor current parameters) 
-fprintf("Maximum battery power consumption: %0.1f kW for overall gear ratio: %0.1f\n", max(battery_power_consumption), frontgearratio); 
+fprintf("Top Speed During Accel: %0.1f m/s for overall gear ratio: %0.1f\n", max(V), frontgearratio); 
 
+%% Gear Ratio Sweep 
 
-% fprintf("75 m acceleration event time: %0.2f for power split: %0.2f\n", T(pos+1), rear_bias); 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+fprintf("75 m acceleration event time: %0.2f for power split: %0.2f\n", T(pos+1), rear_bias); 
 Acceltime(i) = T(pos+1); 
-maxpower(i) = max(battery_power_consumption); 
+maxpower(i) = round(max(battery_power_consumption)); 
+topspeed(i) = max(V);
 maxpowerdelta(i) = (maxpower(i) - 80)/80; 
 i=i+1; %counter variable 
 end
@@ -388,18 +401,18 @@ plot(gr_sweep, Acceltime, 'bo');
 ylabel("Time (s)"); 
 
 yyaxis("right"); 
-plot(gr_sweep, maxpower, 'ro'); 
-ylabel("Maximum Power Consumption (kW)"); 
+plot(gr_sweep, topspeed, 'ro'); 
+ylabel("Top Speed (m/s)"); 
 
 power_gr_fit = polyfit(gr_sweep, maxpower,1); 
 
-legend("Time", "Max power");
-title("75m acceleration event time and max battery power consumption for overall gear ratio 10 - 18"); 
+legend("Time", "Top Speed");
+title("75m acceleration event time and top speed for overall gear ratio 6 - 18"); 
 xlabel("Gear Ratio");
 
 grid on; 
 
-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % %% Display figure for front-rear power split sweep 
 % 
@@ -485,9 +498,12 @@ subtitle("Torque/RPM Data")
 hold on 
 
 scatter(rear_motor_rpm, front_motor_torque, "blue")
+
+scatter(rear_motor_rpm, front_motor_torque+rear_motor_torque, "green")
+
 hold off
 
-legend("Rear motor torque", "Front motor torque"); 
+legend("Rear motor torque", "Front motor torque", "Combined Torque"); 
 
 grid on
 
@@ -558,3 +574,60 @@ title("Battery current")
 xlabel("Motor RPM"); 
 ylabel("Current (A)"); 
 grid on
+
+
+%% Correlation plots %% 
+
+m = readmatrix("decoded_data(5).csv"); 
+
+startp = 10861.5/0.015;
+
+endp = 10865/0.015; 
+
+
+
+
+torquedata = m(startp:endp,16); 
+signal = m(startp:endp,1); 
+rpmdata = m(startp:endp,17); 
+
+
+t = 0:0.015:(size(torquedata,1)-1)*0.015; 
+
+velocitydata = rpmdata / 60 / 11.33 * 0.2 * 2 * 3.141;
+
+
+
+
+
+figure(7) 
+sgtitle("Acceleration Run [75m]: Test Data vs Simulated")
+subplot(3,1,3)
+hold on
+plot(T, rear_motor_torque, "b-")
+scatter(t',torquedata/10); 
+legend("simulated", "test");
+xlabel("Time [s]")
+ylabel("Motor Torque [Nm]")
+grid on
+hold off
+subplot(3,1,2) 
+hold on
+plot(T, rear_motor_rpm, "b-") 
+scatter(t',rpmdata)
+legend("simulated", "test");
+
+xlabel("Time [s]")
+ylabel("Motor rpm")  
+grid on
+hold off
+subplot(3,1,1) 
+hold on
+plot(T, V,"b-")
+scatter(t', velocitydata); 
+legend("simulated", "test");
+
+xlabel("Time [s]")
+ylabel("Velocity [m/s]")  
+hold off
+grid on 
