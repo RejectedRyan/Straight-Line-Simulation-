@@ -36,19 +36,19 @@ table_row_location_front = round(front_motor_rpm) + 1;
 
 if rear_bias == 1.0  % this part doesn't really make sense, predicts a accel time of 5+ sec which def seems too low. 
     if derate 
-    rear_max_current_accel = 85;  % [A] This is the maximum current that can be applied for 5s before the motor overheats
+    rear_max_current_accel = 41;  % [A] This is the maximum current that can be applied for 5s before the motor overheats
     front_max_current_accel = 0; 
 
     else
-    rear_max_current_accel = 105; %This is the peak current the motor can utilize
+    rear_max_current_accel = 105; %This is the peak current the motor can utilize for 1.24 seconds before derating
     front_max_current_accel = 0; 
     end
 
 else 
     
     if derate
-    rear_max_current_accel = 60 * (11.33/(gearratio));  %using 25 - 75 power split between front and rear, following derating. 
-    front_max_current_accel = 20 * (11.33/(frontgearratio));  %these numbers need to be subject to change based on the gear ratio. otherwise we will exceed the power limit 
+    rear_max_current_accel = min(41, 41 * (11.33/(gearratio)));  %using 25 - 75 power split between front and rear, following derating. 
+    front_max_current_accel = min(41, 41 * (11.33/(frontgearratio)));  %these numbers need to be subject to change based on the gear ratio. otherwise we will exceed the power limit 
     %fprintf("%0.1f\n", rear_max_current_accel); 
     else
     rear_max_current_accel = min(105, 105 * (11.33/(gearratio))); % [A] This is the maximum current that can be applied for 1.24s before the motor overheats
