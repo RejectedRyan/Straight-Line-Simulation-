@@ -10,8 +10,8 @@ clc
 dp = 0.01;  %meters 
 
 %gr sweep for selecting gear ratio 
-gr_low = 11.33;
-gr_high = 11.33;
+gr_low = 8;
+gr_high = 18;
 gr_step = 0.5;
 gr_sweep = gr_low:gr_step:gr_high;
 Acceltime = zeros(size(gr_sweep,1));  
@@ -180,9 +180,9 @@ num_motors = 2; % Number of motors being used
 gearbox_e = 0.85; % Approx. Gearbox efficiency -> Multiply the  torque by this value
 gearratio = 11.33;
 frontgearratio = 11.33; 
-%max_power = 80;  %kW
+max_power = 80000; %W
 %torque = 21; %n*m
-rear_bias = 1.0; % how much of the power is sent to the rear wheels. for now 0 means AWD, 1.0 means RWD
+rear_bias = 0; % how much of the power is sent to the rear wheels. for now 0 means AWD, 1.0 means RWD
 max_rpm = 19200; %max rpm 
 
 
@@ -249,6 +249,10 @@ end
 % are we derating our motors 
 derate = 0; 
  
+% are we hitting the power limit 
+
+power_limit = 0; 
+
 for pos = 1:1:size(P,2)-1
   
     % motor rpm conversion 
@@ -282,7 +286,7 @@ for pos = 1:1:size(P,2)-1
     %available torque for front motors from grip on ground (one tire)
     front_friction_torque(pos) = Fgripfront(pos) * tire_radius / frontgearratio / num_motors / gearbox_e; 
 
-    if T(pos) > 1.71
+    if T(pos) > 1.24
         derate = 1; 
     end
 
@@ -291,8 +295,8 @@ for pos = 1:1:size(P,2)-1
 
     [rear_motor_power_consumption(pos), front_motor_power_consumption(pos), rear_motor_torque(pos), front_motor_torque(pos), ...
      rear_voltage_line_RMS(pos), front_voltage_line_RMS(pos), rear_stator_current_line_RMS(pos), front_stator_current_line_RMS(pos), rear_I_qs(pos), front_I_qs(pos), rear_I_ds(pos), front_I_ds(pos), battery_current(pos), inverter_DCV(pos)] ...
-     = motor_function(derate, rear_bias, rear_motor_rpm(pos), gearratio, front_motor_rpm(pos), frontgearratio,rear_friction_torque(pos), front_friction_torque(pos), inverter_e, interpolatedTorque, ...
-     interpolatedVoltage, interpolatedCurrent, interpolatedPowerConsumption, interpolatedPowerFactor, interpolatedIqRMS, battery_OCV, battery_resistance);
+     = motor_function(power_limit, derate, rear_bias, rear_motor_rpm(pos), gearratio, front_motor_rpm(pos), frontgearratio,rear_friction_torque(pos), front_friction_torque(pos), inverter_e, interpolatedTorque, ...
+     interpolatedVoltage, interpolatedCurrent, interpolatedPowerConsumption, interpolatedPowerFactor, interpolatedIqRMS, current_fine, battery_OCV, battery_resistance);
 
     %calculate force from motors pushing car forward. 
 
@@ -323,9 +327,9 @@ for pos = 1:1:size(P,2)-1
     end 
 
     % power limiter. hitting 80 kW power limit = no more acceleration 
-    if battery_current(pos) * battery_OCV >= 160000
+    if battery_current(pos) * battery_OCV >= max_power
 
-        A(pos+1) = 0; 
+        power_limit = 1; 
 
     end
     
@@ -404,7 +408,6 @@ yyaxis("right");
 plot(gr_sweep, topspeed, 'ro'); 
 ylabel("Top Speed (m/s)"); 
 
-power_gr_fit = polyfit(gr_sweep, maxpower,1); 
 
 legend("Time", "Top Speed");
 title("75m acceleration event time and top speed for overall gear ratio 6 - 18"); 
@@ -422,6 +425,7 @@ grid on;
 % xlabel("Power split (fraction of power to rear motors)");
 % ylabel("Time (s)"); 
 % grid on; 
+
 
 %% Display single accel sim forces and traction graphs 
 
@@ -575,6 +579,14 @@ xlabel("Motor RPM");
 ylabel("Current (A)"); 
 grid on
 
+subplot(3,1,3) 
+
+scatter(rear_motor_rpm, rear_stator_current_line_RMS, "red") 
+hold on
+scatter(rear_motor_rpm, front_stator_current_line_RMS, "blue")
+legend("Rear Motor Current", "Front Motor Current"); 
+title("Commanded Current")
+hold off
 
 %% Correlation plots %% 
 
