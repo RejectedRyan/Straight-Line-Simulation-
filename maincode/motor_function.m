@@ -1,4 +1,4 @@
-function [rear_motor_power_consumption, front_motor_power_consumption, rear_motor_torque, front_motor_torque, rear_voltage_line_RMS, front_voltage_line_RMS, rear_stator_current_line_RMS, front_stator_current_line_RMS, rear_I_qs, front_I_qs, rear_I_ds, front_I_ds, battery_current, inverter_DCV] = motor_function(derate, rear_bias, rear_motor_rpm, gearratio, front_motor_rpm, frontgearratio, rear_friction_torque, front_friction_torque, inverter_e, interpolatedTorque, interpolatedVoltage, interpolatedCurrent, interpolatedPowerConsumption, interpolatedPowerFactor, interpolatedIq, battery_OCV, battery_resistance)
+function [rear_motor_power_consumption, front_motor_power_consumption, rear_motor_torque, front_motor_torque, rear_voltage_line_RMS, front_voltage_line_RMS, rear_stator_current_line_RMS, front_stator_current_line_RMS, rear_I_qs, front_I_qs, rear_I_ds, front_I_ds, battery_current, inverter_DCV] = motor_function(power_limit, derate, rear_bias, rear_motor_rpm, gearratio, front_motor_rpm, frontgearratio, rear_friction_torque, front_friction_torque, inverter_e, interpolatedTorque, interpolatedVoltage, interpolatedCurrent, interpolatedPowerConsumption, interpolatedPowerFactor, interpolatedIq, current_fine, battery_OCV, battery_resistance)
 %% RATED POWER
 % This function determines the motor parameters based upon the state of motor RPM, 
 % Traction, Battery Voltage and Resistance using the interpolated motor
@@ -16,16 +16,7 @@ table_row_location_front = round(front_motor_rpm) + 1;
 
 
 
-%% CONSTANT TORQUE REGION 
-% TRACTION LIMITED OR POWER/MOTOR LIMITED STATE
-% This section calculates the motor torque based upon the motor's
-% capability (power) at the given RPM and the avaiable traction at the tire contact
-% patch. The motor torque is set as the minimum torque. The other motor
-% parameters are determined based upon the RPM state and calculated torque 
-
-% ------------------ Determine Motor Torque ---------------------------
-% Determine motor torque based upon given rpm state, friction at tire contact patch, and maximum motor current bounded by thermals
-
+%% COMMANDED CURRENT 
 
 %max current should changed based on amount of rear bias. need to talk to 
 %battery people 
@@ -34,7 +25,7 @@ table_row_location_front = round(front_motor_rpm) + 1;
 % this theoretically will allow higher max currents without breaking the 80
 % kW power limit. 
 
-if rear_bias == 1.0  % this part doesn't really make sense, predicts a accel time of 5+ sec which def seems too low. 
+if rear_bias == 1.0  
     if derate 
     rear_max_current_accel = 41;  % [A] This is the maximum current that can be applied for 5s before the motor overheats
     front_max_current_accel = 0; 
@@ -47,15 +38,83 @@ if rear_bias == 1.0  % this part doesn't really make sense, predicts a accel tim
 else 
     
     if derate
-    rear_max_current_accel = min(41, 41 * (11.33/(gearratio)));  %using 25 - 75 power split between front and rear, following derating. 
-    front_max_current_accel = min(41, 41 * (11.33/(frontgearratio)));  %these numbers need to be subject to change based on the gear ratio. otherwise we will exceed the power limit 
+    rear_max_current_accel = 41;  %using 25 - 75 power split between front and rear, following derating. 
+    front_max_current_accel = 41;  %these numbers need to be subject to change based on the gear ratio. otherwise we will exceed the power limit 
     %fprintf("%0.1f\n", rear_max_current_accel); 
     else
-    rear_max_current_accel = min(105, 105 * (11.33/(gearratio))); % [A] This is the maximum current that can be applied for 1.24s before the motor overheats
-    front_max_current_accel = 55 * (11.33/(frontgearratio)); % This is approximately the maximum current given the grip limitations of the front wheels 
+    rear_max_current_accel = 105; % [A] This is the maximum current that can be applied for 1.24s before the motor overheats
+    front_max_current_accel = 105; % This is approximately the maximum current given the grip limitations of the front wheels 
     end
 
 end
+
+%% POWER LIMIT 
+
+%Essentially what should occur here is if the vehicle is being power
+%limited, it should calculate the maximum current that can be commanded
+%without exceeding the power limit. 
+
+if power_limit 
+
+%backtrack to determine what the max battery current can be given the power
+%limit --> to determine max motor power consumption, then use the lookup
+%tables to determine what the new max current should be. 
+
+%how to determine what front and rear should be??? 
+
+max_battery_current = 80000 / battery_OCV; 
+
+max_motor_power_consumption = (max_battery_current * battery_OCV) - (max_battery_current^2 * battery_resistance); 
+
+if derate 
+
+
+motor_power_consumption_vector = interpolatedPowerConsumption(table_row_location_rear, :);
+locate_current_column_vector = abs(motor_power_consumption_vector - (max_motor_power_consumption/4)); 
+column_min = min(locate_current_column_vector); 
+current_column = locate_current_column_vector == column_min; 
+
+
+rear_max_current_accel = min(41, current_fine(current_column)); 
+front_max_current_accel = min(41, current_fine(current_column)); 
+
+
+%in case of pre-derating, what should be prioritized? rear or front. I
+%would say rear because the fronts may be traction limited, while the rear
+%does not experience this 
+
+else 
+
+rear_max_current_accel = 105; 
+
+%calculate remaining power available given rear motors set to 105 ARMS  
+
+rear_motor_consumption = interpolatedPowerConsumption(table_row_location_rear, (rear_max_current_accel*10));
+available_power = max_motor_power_consumption - (rear_motor_consumption * 2); 
+
+
+motor_power_consumption_vector = interpolatedPowerConsumption(table_row_location_front, :);
+locate_current_column_vector = abs(motor_power_consumption_vector - (available_power/2)); 
+column_min = min(locate_current_column_vector); 
+current_column = locate_current_column_vector == column_min; 
+
+front_max_current_accel = current_fine(current_column);
+
+end
+
+
+end
+%% CONSTANT TORQUE REGION 
+% TRACTION LIMITED OR POWER/MOTOR LIMITED STATE
+% This section calculates the motor torque based upon the motor's
+% capability (power) at the given RPM and the avaiable traction at the tire contact
+% patch. The motor torque is set as the minimum torque. The other motor
+% parameters are determined based upon the RPM state and calculated torque 
+
+% ------------------ Determine Motor Torque ---------------------------
+% Determine motor torque based upon given rpm state, friction at tire contact patch, and maximum motor current bounded by thermals
+
+
 
 rear_stator_current_column = round(rear_max_current_accel / 0.1) + 1; % column location for the maximum current that can be applied to the rear motor 
 rear_torque_vals = interpolatedTorque(table_row_location_rear,1:rear_stator_current_column); % torque values at current rpm
