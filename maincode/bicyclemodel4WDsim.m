@@ -1,18 +1,26 @@
+function [Acceltime] = bicyclemodel4WDsim(rear_bias, gr_low, gr_high, mass, cd, cdf, rear_weight_distribution, mux, graphs)
+
 %% QSS BICYCLE STRAIGHT LINE SIMULATION W/ AWD 
 
 %mostly adapted from Andrew's straight line sim, but modified so that it
 %works with 4WD 
 
 close all
-clear
-clc
+
 %dist step
 dp = 0.01;  %meters 
 
+%RWD or AWD? 
+
+ % how much of the power is sent to the rear wheels. for now 0 means AWD, 1.0 means RWD
+
+%Calibration Factor
+
+CalibrationFactor = 1.2; 
+
 %gr sweep for selecting gear ratio 
-gr_low = 8;
-gr_high = 18;
-gr_step = 0.5;
+
+gr_step = 0.1;
 gr_sweep = gr_low:gr_step:gr_high;
 Acceltime = zeros(size(gr_sweep,1));  
 
@@ -30,11 +38,6 @@ maxpowerdelta = zeros(size(gr_sweep,1));
 
 topspeed = zeros(size(gr_sweep,1)); 
 
-%sweep for selecting power split
-rear_bias_low = 0.20;
-rear_bias_high = 1.0; 
-rear_bias_step = 0.05;
-rb_sweep = rear_bias_low:rear_bias_step:rear_bias_high;
 
 %Accel length 
 dist = 75; %m
@@ -159,30 +162,27 @@ rho = 1.225; % kg/m^3
 g = 9.81; % m/s^2
 
 %MASS given RWD configuration 
-mass = 268.8; % total mass [kg] (includes driver weight)
+ % total mass [kg] (includes driver weight)
 
 %AERODYNAMICS
-cd = 1.28; % coefficient of drag
-cdf = 3.75; % coefficient of downforce
+
 frontal_A = 1.21; % frontal area [m^2]
 Cp = 1-0.514; % center of pressure? not sure if this is necessary or a real thing. currently just an estimate given 
 %the rear wing is very large. 
 %VEHICLE DYNAMICS
-rear_weight_distribution = 0.57; % Percent mass in rear
+
 wheelbase = 1.535; % wheel base [m]
 COG_height = 0.295; %  COG height [m]
-mux = 1.4; % average tire friction coefficient
 tire_radius = 0.2; % effective tire radius [m]
 
 
 % DRIVETRAIN DATA
 num_motors = 2; % Number of motors being used
-gearbox_e = 0.85; % Approx. Gearbox efficiency -> Multiply the  torque by this value
+gearbox_e = 0.90; % Approx. Gearbox efficiency -> Multiply the  torque by this value
 gearratio = 11.33;
 frontgearratio = 11.33; 
-max_power = 80000; %W
+max_power = 78000; %W
 %torque = 21; %n*m
-rear_bias = 0; % how much of the power is sent to the rear wheels. for now 0 means AWD, 1.0 means RWD
 max_rpm = 19200; %max rpm 
 
 
@@ -195,7 +195,7 @@ p_count = 3; % num of battery parallel rows
 cell_DCIR = 0.010; % ohms
 battery_resistance = s_count * cell_DCIR / p_count; % OHMS
 cell_max_voltage = 4.1; % maximum voltage we charge each cell
-battery_OCV = cell_max_voltage * s_count; % Battery open current voltage
+battery_OCV = 540; % Battery open current voltage
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%
@@ -206,7 +206,7 @@ for gearratio = gr_low:gr_step:gr_high
 
 frontgearratio = gearratio; 
 
-
+warning('off', 'all')
 
 %%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -220,16 +220,7 @@ A(1) = 0;
 V(1) = 0; 
 P(1) = 0;
 
-if rear_bias < 1.0 
-%MASS given 4WD configuration (based on weight of drivetrain system found on design report) 
 
-%rears are 13 kg combined, front is 5 kg combined 
-
-mass = 268.8 + 8;  
-
-else 
-mass = 268.8; 
-end
 
 %% QSS Timestep Calculations 
 
@@ -318,7 +309,7 @@ for pos = 1:1:size(P,2)-1
  
     %Update kinematics
     
-    A(pos+1) = Force(pos)/mass; 
+    A(pos+1) = CalibrationFactor*Force(pos)/mass; 
     %rev limiter  %pretty sure this is not valid 
     if rear_motor_rpm(pos) > max_rpm || front_motor_rpm(pos) > max_rpm
     
@@ -388,7 +379,7 @@ fprintf("Top Speed During Accel: %0.1f m/s for overall gear ratio: %0.1f\n", max
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-fprintf("75 m acceleration event time: %0.2f for power split: %0.2f\n", T(pos+1), rear_bias); 
+fprintf("75 m acceleration event time: %0.2f\n", T(pos+1)); 
 Acceltime(i) = T(pos+1); 
 maxpower(i) = round(max(battery_power_consumption)); 
 topspeed(i) = max(V);
@@ -410,7 +401,7 @@ ylabel("Top Speed (m/s)");
 
 
 legend("Time", "Top Speed");
-title("75m acceleration event time and top speed for overall gear ratio 6 - 18"); 
+title("75m acceleration event time and top speed for swept gear ratios"); 
 xlabel("Gear Ratio");
 
 grid on; 
@@ -426,7 +417,7 @@ grid on;
 % ylabel("Time (s)"); 
 % grid on; 
 
-
+if(graphs)
 %% Display single accel sim forces and traction graphs 
 
 %plot AVP Graph 
@@ -540,14 +531,14 @@ grid on
 fprintf("Maximum battery power consumption: %0.2fkW\n", max(battery_power_consumption)); 
 
 subplot(4, 1, 4)
-scatter(rear_motor_rpm, motor_power_consumption)
+scatter(rear_motor_rpm, total_motor_power_consumption)
 grid on
 xlabel("Motor RPM")
 ylabel("Power [kW]")
 title("Power vs RPM")
 hold on
-scatter(rear_motor_rpm, mechanical_output_power*1000)
-legend("Electrical Input", "Mechanical Output")
+scatter(rear_motor_rpm, (inverter_DCV .* battery_current)/1000)
+legend("Electrical Input", "P = IV output")
 grid on
 hold off
 
@@ -558,11 +549,11 @@ figure(5)
 subplot(3, 1, 1)
 hold on
 
-scatter(rear_motor_rpm, rear_voltage_line_RMS, "red")
-scatter(rear_motor_rpm, front_voltage_line_RMS, "blue")
-scatter(rear_motor_rpm, inverter_DCV / sqrt(2), "green")
+%scatter(rear_motor_rpm, rear_voltage_line_RMS, "red")
+%scatter(rear_motor_rpm, front_voltage_line_RMS, "blue")
+scatter(rear_motor_rpm, inverter_DCV, "green")
 title("Voltage Data")
-legend("Rear voltage line RMS", "Front voltage line RMS", "Inverter DCV / root 2")
+legend("Inverter DCV")
 
 xlabel("Motor RPM")
 ylabel("Voltage [V]")
@@ -588,6 +579,17 @@ legend("Rear Motor Current", "Front Motor Current");
 title("Commanded Current")
 hold off
 
+figure(8) 
+
+motor_efficiency = total_mechanical_output_power./battery_power_consumption;
+
+
+plot(rear_motor_rpm, motor_efficiency, 'b-'); 
+title("Motor Efficiency vs RPM");
+xlabel("RPM"); 
+ylabel("Motor Efficiency"); 
+
+
 %% Correlation plots %% 
 
 m = readmatrix("decoded_data(5).csv"); 
@@ -604,7 +606,7 @@ signal = m(startp:endp,1);
 rpmdata = m(startp:endp,17); 
 
 
-t = 0:0.015:(size(torquedata,1)-1)*0.015; 
+t = 0:0.023:(size(torquedata,1)-1)*0.023; 
 
 velocitydata = rpmdata / 60 / 11.33 * 0.2 * 2 * 3.141;
 
@@ -643,3 +645,9 @@ xlabel("Time [s]")
 ylabel("Velocity [m/s]")  
 hold off
 grid on 
+
+
+
+
+
+end
